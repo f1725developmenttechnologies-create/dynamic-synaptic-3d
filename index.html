@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F1725: Dynamic Synaptic Routing 3D</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #00f3ff;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #00f3ff;
+            z-index: 100;
+            font-size: 12px;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #00f3ff;
+            z-index: 100;
+        }
+        select, button {
+            margin: 5px 0;
+            padding: 8px;
+            background: #1a1a2e;
+            color: white;
+            border: 1px solid #00f3ff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        button {
+            background: #00f3ff;
+            color: black;
+            font-weight: bold;
+            width: 100%;
+        }
+        button:hover {
+            background: #00ff9d;
+        }
+        #stats {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #00f3ff;
+            font-size: 12px;
+            z-index: 100;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            min-width: 200px;
+        }
+        .efficient { color: #00ff9d; }
+        .inefficient { color: #ff2a6d; }
+        #phase {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00f3ff;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+            text-shadow: 0 0 20px #00f3ff;
+            z-index: 100;
+            pointer-events: none;
+        }
+        #mode-indicator {
+            position: absolute;
+            top: 100px;
+            left: 10px;
+            color: #00ff9d;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #00ff9d;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <strong>F1725 // DYNAMIC SYNAPTIC ROUTING 3D</strong><br>
+        Mouse: Rotar | Scroll: Zoom | Click derecho: Mover
+    </div>
+    
+    <div id="controls">
+        <select id="taskType">
+            <option value="secure_code">Generar Código Seguro</option>
+            <option value="creative">Redacción Creativa</option>
+            <option value="data_analysis">Análisis de Datos</option>
+        </select>
+        <select id="networkMode">
+            <option value="emergent">Sinapsis Emergentes</option>
+            <option value="traditional">Red Densa Tradicional</option>
+        </select>
+        <button onclick="startGeneration()">EJECUTAR PROMPT</button>
+    </div>
+
+    <div id="mode-indicator">MODO: SINAPSIS EMERGENTES</div>
+
+    <div id="stats">
+        <div class="stat-row"><span>Parámetros Activos:</span> <span id="statParams">0%</span></div>
+        <div class="stat-row"><span>Consumo (TFLOPs):</span> <span id="statFlops">0</span></div>
+        <div class="stat-row"><span>Latencia:</span> <span id="statLatency">0 ms</span></div>
+        <div class="stat-row"><span>Skills Activos:</span> <span id="statSkills">0/6</span></div>
+        <div class="stat-row"><span>KSHIELD:</span> <span id="statKshield" class="efficient">ACTIVO</span></div>
+    </div>
+
+    <div id="phase">FASE: LISTO</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // Variables globales
+        let scene, camera, renderer, controls;
+        let nodes = [];
+        let connections = [];
+        let particles = [];
+        let currentPhase = 'IDLE';
+
+        // Colores
+        const colors = {
+            input: 0xffffff,
+            skill: 0x00f3ff,
+            reasoning: 0x00ff9d,
+            bottleneck: 0xff2a6d,
+            output: 0xffffff,
+            connection: 0x00f3ff,
+            inactive: 0x1a1a2e
+        };
+
+        // Skills del sistema
+        const skills = [
+            { id: 'logic', name: 'Lógica', color: 0x00f3ff },
+            { id: 'creative', name: 'Creativo', color: 0xff9d00 },
+            { id: 'kshield', name: 'KSHIELD', color: 0x00ff9d },
+            { id: 'data', name: 'Datos', color: 0xbd00ff },
+            { id: 'vision', name: 'Visión', color: 0xff2a6d },
+            { id: 'audio', name: 'Audio', color: 0x00ff9d }
+        ];
+
+        function init() {
+            // Escena
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+            // Cámara
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 30;
+            camera.position.y = 10;
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            // Controles
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Luces
+            const ambientLight = new THREE.AmbientLight(0x404040, 2);
+            scene.add(ambientLight);
+
+            const pointLight = new THREE.PointLight(0x00f3ff, 1, 100);
+            pointLight.position.set(0, 10, 0);
+            scene.add(pointLight);
+
+            // Grid de fondo
+            const gridHelper = new THREE.GridHelper(100, 50, 0x00f3ff, 0x001133);
+            scene.add(gridHelper);
+
+            createNetwork();
+            animate();
+        }
+
+        function createNode(x, y, z, type, label, skillId = null) {
+            const geometry = new THREE.SphereGeometry(type === 'reasoning' || type === 'bottleneck' ? 1.5 : 1, 32, 32);
+            const material = new THREE.MeshPhongMaterial({
+                color: colors.inactive,
+                emissive: colors.inactive,
+                emissiveIntensity: 0.5,
+                shininess: 100
+            });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(x, y, z);
+            sphere.userData = { type, label, skillId, originalScale: 1, active: false };
+            scene.add(sphere);
+            nodes.push(sphere);
+
+            // Etiqueta de texto (simple billboard)
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 64;
+            context.fillStyle = '#ffffff';
+            context.font = 'Bold 20px Courier New';
+            context.textAlign = 'center';
+            context.fillText(label, 128, 32);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.position.set(x, y + 2.5, z);
+            sprite.scale.set(4, 1, 1);
+            scene.add(sprite);
+
+            return sphere;
+        }
+
+        function createConnection(source, target, color = colors.connection) {
+            const material = new THREE.LineBasicMaterial({ 
+                color: 0x333333, 
+                linewidth: 2,
+                transparent: true,
+                opacity: 0.5
+            });
+            const points = [];
+            points.push(source.position);
+            points.push(target.position);
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, material);
+            line.userData = { source, target, active: false, baseColor: color };
+            scene.add(line);
+            connections.push(line);
+            return line;
+        }
+
+        function createNetwork() {
+            // Limpiar
+            nodes.forEach(n => scene.remove(n));
+            connections.forEach(c => scene.remove(c));
+            nodes = [];
+            connections = [];
+
+            const mode = document.getElementById('networkMode').value;
+            const isEmergent = mode === 'emergent';
+
+            // Nodo de entrada (Prompt)
+            const inputNode = createNode(-15, 0, 0, 'input', 'PROMPT');
+            inputNode.material.color.setHex(colors.input);
+            inputNode.material.emissive.setHex(colors.input);
+
+            // Nodos de Skills (distribuidos en círculo)
+            const skillRadius = 6;
+            const skillNodes = [];
+            skills.forEach((skill, i) => {
+                const angle = (i / skills.length) * Math.PI * 2;
+                const x = -8 + Math.cos(angle) * skillRadius * 0.3;
+                const y = Math.sin(angle) * skillRadius;
+                const z = Math.sin(angle) * 3;
+                const node = createNode(x, y, z, 'skill', skill.name, skill.id);
+                node.material.color.setHex(skill.color);
+                node.material.emissive.setHex(skill.color);
+                skillNodes.push(node);
+                
+                createConnection(inputNode, node, skill.color);
+            });
+
+            // Nodos de razonamiento
+            if (isEmergent) {
+                // Distribuido - múltiples nodos
+                const r1 = createNode(5, 3, 0, 'reasoning', 'RAZON-A');
+                r1.material.color.setHex(colors.reasoning);
+                r1.material.emissive.setHex(colors.reasoning);
+                
+                const r2 = createNode(5, -3, 0, 'reasoning', 'RAZON-B');
+                r2.material.color.setHex(colors.reasoning);
+                r2.material.emissive.setHex(colors.reasoning);
+
+                // Conexiones selectivas
+                skillNodes.forEach((node, i) => {
+                    if (i < 4) createConnection(node, r1, colors.reasoning);
+                    else createConnection(node, r2, colors.reasoning);
+                });
+
+                // Nodo de salida
+                const output = createNode(15, 0, 0, 'output', 'SALIDA');
+                output.material.color.setHex(colors.output);
+                output.material.emissive.setHex(colors.output);
+                
+                createConnection(r1, output, colors.output);
+                createConnection(r2, output, colors.output);
+
+            } else {
+                // Tradicional - cuello de botella central
+                const bottleneck = createNode(5, 0, 0, 'bottleneck', 'CUELLO\nBOTELLA');
+                bottleneck.material.color.setHex(colors.bottleneck);
+                bottleneck.material.emissive.setHex(colors.bottleneck);
+
+                // Todas las conexiones convergen aquí
+                skillNodes.forEach(node => {
+                    createConnection(node, bottleneck, colors.bottleneck);
+                });
+
+                const output = createNode(15, 0, 0, 'output', 'SALIDA');
+                output.material.color.setHex(colors.output);
+                output.material.emissive.setHex(colors.output);
+                
+                createConnection(bottleneck, output, colors.bottleneck);
+            }
+        }
+
+        function setPhase(text) {
+            const el = document.getElementById('phase');
+            el.innerText = `FASE: ${text}`;
+            el.style.opacity = 1;
+            setTimeout(() => { el.style.opacity = 0; }, 2000);
+        }
+
+        function updateStats(mode, task) {
+            const paramsEl = document.getElementById('statParams');
+            const flopsEl = document.getElementById('statFlops');
+            const latencyEl = document.getElementById('statLatency');
+            const skillsEl = document.getElementById('statSkills');
+            const kshieldEl = document.getElementById('statKshield');
+
+            if (mode === 'emergent') {
+                let activeCount = task === 'secure_code' ? 3 : task === 'creative' ? 2 : 2;
+                paramsEl.innerText = `${(activeCount / 6 * 100).toFixed(0)}%`;
+                paramsEl.className = 'efficient';
+                flopsEl.innerText = `${(activeCount / 6 * 100).toFixed(0)}T`;
+                flopsEl.className = 'efficient';
+                latencyEl.innerText = '120 ms';
+                latencyEl.className = 'efficient';
+                skillsEl.innerText = `${activeCount}/6`;
+                kshieldEl.innerText = task === 'secure_code' ? 'VALIDANDO' : 'N/A';
+                kshieldEl.className = task === 'secure_code' ? 'efficient' : '';
+            } else {
+                paramsEl.innerText = '100%';
+                paramsEl.className = 'inefficient';
+                flopsEl.innerText = '850T';
+                flopsEl.className = 'inefficient';
+                latencyEl.innerText = '850 ms';
+                latencyEl.className = 'inefficient';
+                skillsEl.innerText = '6/6 (RUIDO)';
+                kshieldEl.innerText = 'COLAPSADO';
+                kshieldEl.className = 'inefficient';
+            }
+        }
+
+        function activateNode(node, color) {
+            node.userData.active = true;
+            node.material.color.setHex(color);
+            node.material.emissive.setHex(color);
+            node.material.emissiveIntensity = 1;
+        }
+
+        function activateConnection(connection, color) {
+            connection.userData.active = true;
+            connection.material.color.setHex(color);
+            connection.material.opacity = 1;
+            connection.material.linewidth = 3;
+        }
+
+        function startGeneration() {
+            const mode = document.getElementById('networkMode').value;
+            const task = document.getElementById('taskType').value;
+            const isEmergent = mode === 'emergent';
+
+            // Reset
+            nodes.forEach(n => {
+                n.userData.active = false;
+                n.material.color.setHex(colors.inactive);
+                n.material.emissive.setHex(colors.inactive);
+                n.material.emissiveIntensity = 0.2;
+            });
+            connections.forEach(c => {
+                c.userData.active = false;
+                c.material.color.setHex(0x333333);
+                c.material.opacity = 0.3;
+                c.material.linewidth = 1;
+            });
+
+            document.getElementById('mode-indicator').innerText = 
+                isEmergent ? 'MODO: SINAPSIS EMERGENTES (F1725)' : 'MODO: RED DENSA TRADICIONAL';
+            document.getElementById('mode-indicator').style.color = isEmergent ? '#00ff9d' : '#ff2a6d';
+            document.getElementById('mode-indicator').style.borderColor = isEmergent ? '#00ff9d' : '#ff2a6d';
+
+            updateStats(mode, task);
+
+            // Secuencia de animación
+            setTimeout(() => {
+                activateNode(nodes[0], colors.input);
+                setPhase('1. LECTURA DE PROMPT');
+                
+                setTimeout(() => {
+                    setPhase(isEmergent ? '2. ACTIVACIÓN DE SKILLS ESPECÍFICOS' : '2. ACTIVACIÓN MASIVA (RUIDO)');
+                    
+                    let skillsToActivate = [];
+                    if (isEmergent) {
+                        if (task === 'secure_code') skillsToActivate = ['logic', 'kshield', 'data'];
+                        if (task === 'creative') skillsToActivate = ['creative', 'logic'];
+                        if (task === 'data_analysis') skillsToActivate = ['data', 'logic'];
+                    } else {
+                        skillsToActivate = skills.map(s => s.id);
+                    }
+
+                    nodes.forEach(node => {
+                        if (node.userData.type === 'skill' && skillsToActivate.includes(node.userData.skillId)) {
+                            const color = skills.find(s => s.id === node.userData.skillId).color;
+                            activateNode(node, color);
+                            
+                            connections.forEach(conn => {
+                                if (conn.userData.source === nodes[0] && conn.userData.target === node) {
+                                    activateConnection(conn, color);
+                                }
+                            });
+                        } else if (node.userData.type === 'skill' && !isEmergent) {
+                            activateNode(node, colors.bottleneck);
+                            connections.forEach(conn => {
+                                if (conn.userData.source === nodes[0] && conn.userData.target === node) {
+                                    activateConnection(conn, colors.bottleneck);
+                                }
+                            });
+                        }
+                    });
+
+                    setTimeout(() => {
+                        setPhase(isEmergent ? '3. RAZONAMIENTO DISTRIBUIDO + KSHIELD' : '3. CUELLO DE BOTELLA');
+                        
+                        nodes.forEach(node => {
+                            if (node.userData.type === 'reasoning' || node.userData.type === 'bottleneck') {
+                                const color = isEmergent ? colors.reasoning : colors.bottleneck;
+                                activateNode(node, color);
+                                
+                                connections.forEach(conn => {
+                                    if (conn.userData.target === node && conn.userData.source.userData.active) {
+                                        activateConnection(conn, color);
+                                    }
+                                });
+                            }
+                        });
+
+                        setTimeout(() => {
+                            setPhase('4. GENERACIÓN DE SALIDA');
+                            nodes.forEach(node => {
+                                if (node.userData.type === 'output') {
+                                    activateNode(node, colors.output);
+                                    connections.forEach(conn => {
+                                        if (conn.userData.target === node && conn.userData.source.userData.active) {
+                                            activateConnection(conn, colors.output);
+                                        }
+                                    });
+                                }
+                            });
+                        }, 1500);
+
+                    }, 1500);
+
+                }, 1000);
+            }, 500);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // Animación de pulsación
+            const time = Date.now() * 0.001;
+            nodes.forEach(node => {
+                if (node.userData.active) {
+                    const scale = node.userData.originalScale + Math.sin(time * 3) * 0.2;
+                    node.scale.set(scale, scale, scale);
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.in
